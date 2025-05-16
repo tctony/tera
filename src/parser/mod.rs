@@ -46,11 +46,43 @@ lazy_static! {
 /// We need to remove those before putting them in the AST
 fn replace_string_markers(input: &str) -> String {
     match input.chars().next().unwrap() {
-        '"' => input.replace('"', ""),
-        '\'' => input.replace('\'', ""),
-        '`' => input.replace('`', ""),
+        '"' => replace_escaped_chars_in_string(input),
+        '\'' => replace_escaped_chars_in_string(input),
+        '`' => replace_escaped_chars_in_string(input),
         _ => unreachable!("How did you even get there"),
     }
+}
+
+fn replace_escaped_chars_in_string(input: &str) -> String {
+    let content = &input[1..input.len() - 1]; // 去掉首尾引号
+
+    // 处理转义序列
+    let mut result = String::with_capacity(content.len());
+    let mut chars = content.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            // 处理转义字符
+            if let Some(&next) = chars.peek() {
+                match next {
+                    '\\' => result.push('\\'),
+                    'n' => result.push('\n'),
+                    'r' => result.push('\r'),
+                    't' => result.push('\t'),
+                    '0' => result.push('\0'),
+                    '"' => result.push('"'),
+                    '\'' => result.push('\''),
+                    '`' => result.push('`'),
+                    _ => result.push(next), // 其他转义序列原样保留
+                }
+                chars.next(); // 跳过已处理的字符
+            }
+        } else {
+            result.push(c);
+        }
+    }
+
+    result
 }
 
 fn parse_kwarg(pair: Pair<Rule>) -> TeraResult<(String, Expr)> {
@@ -1084,6 +1116,7 @@ pub fn parse(input: &str) -> TeraResult<Vec<Node>> {
                     Rule::EOI => "end of input".to_string(),
                     Rule::int => "an integer".to_string(),
                     Rule::float => "a float".to_string(),
+                    Rule::escape => "an escape char".to_string(),
                     Rule::string
                     | Rule::double_quoted_string
                     | Rule::single_quoted_string

@@ -14,8 +14,11 @@ float = @{
         '1'..'9' ~ '0'..'9' * ~ "." ~ '0'..'9' +
     )
 }
+// 定义转义序列规则
+escape = @{ "\\" ~ ("\"" | "\'" | "`" | "n" | "r" | "t" | "\\" | "0" | ANY) }
+
 // matches anything between 2 double quotes
-double_quoted_string  = @{ "\"" ~ (!("\"") ~ ANY)* ~ "\""}
+double_quoted_string  = @{ "\"" ~ (escape | (!("\"") ~ ANY))* ~ "\""}
 // matches anything between 2 single quotes
 single_quoted_string  = @{ "\'" ~ (!("\'") ~ ANY)* ~ "\'"}
 // matches anything between 2 backquotes\backticks
