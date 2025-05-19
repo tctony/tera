@@ -1,5 +1,11 @@
 # Tera
 
+this fork has made following changes:
+- handle escaped chars in string literal: `{{ 'hello\nworld'  }}`
+- support add and sub in square brackets: `{{ messages[loop.index0 + 1] }}`
+- support string concat with operator +: `{{ '1' + '2'  + '3' }}`
+- add builtin filter tojson: `{{ json_obj | tojson }}`
+
 [![Actions Status](https://github.com/Keats/tera/workflows/ci/badge.svg)](https://github.com/Keats/tera/actions)
 [![Crates.io](https://img.shields.io/crates/v/tera.svg)](https://crates.io/crates/tera)
 [![Docs](https://docs.rs/tera/badge.svg)](https://docs.rs/crate/tera/)
