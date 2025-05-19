@@ -726,6 +726,8 @@ impl Tera {
         self.register_filter("as_str", common::as_str);
 
         self.register_filter("get", object::get);
+
+        self.register_filter("tojson", common::tojson);
     }
 
     fn register_tera_testers(&mut self) {

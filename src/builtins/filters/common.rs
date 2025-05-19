@@ -59,6 +59,11 @@ pub fn json_encode(value: &Value, args: &HashMap<String, Value>) -> Result<Value
     }
 }
 
+// Returns the value as a string, or an error if it cannot be converted.
+pub fn tojson(value: &Value, _: &HashMap<String, Value>) -> Result<Value> {
+    to_string(value).map(Value::String).map_err(Error::json)
+}
+
 /// Returns a formatted time according to the given `format` argument.
 /// `format` defaults to the ISO 8601 `YYYY-MM-DD` format.
 ///
