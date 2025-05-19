@@ -172,6 +172,7 @@ pub fn date(value: &Value, args: &HashMap<String, Value>) -> Result<Value> {
     let formatted = match value {
         Value::Number(n) => match n.as_i64() {
             Some(i) => {
+                #[allow(deprecated)]
                 let date = NaiveDateTime::from_timestamp_opt(i, 0).expect(
                     "out of bound seconds should not appear, as we set nanoseconds to zero",
                 );
