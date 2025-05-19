@@ -75,8 +75,7 @@ fn process_expr_path<'a>(path: &str, call_stack: &CallStack<'a>) -> Result<Val<'
     if !path.contains("+") && !path.contains("-") {
         // first try as variable, then as literal number
         match process_path(path, call_stack) {
-            Ok(v) => 
-                    return Ok(v),
+            Ok(v) => return Ok(v),
             Err(e) => {
                 // try to parse as number
                 let num = path.parse::<i64>();
@@ -85,10 +84,7 @@ fn process_expr_path<'a>(path: &str, call_stack: &CallStack<'a>) -> Result<Val<'
                         Number::from_i128(num.unwrap() as i128).unwrap(),
                     )));
                 }
-                return Err(Error::msg(format!(
-                    "Variable `{}` is not a number: {}",
-                    path, e
-                )));
+                return Err(Error::msg(format!("Variable `{}` is not a number: {}", path, e)));
             }
         }
     }
@@ -113,13 +109,13 @@ fn process_expr_path<'a>(path: &str, call_stack: &CallStack<'a>) -> Result<Val<'
 
     let (left, right) = path.split_at(split_index);
 
-    let left = left.trim(); 
+    let left = left.trim();
     let left_val = process_expr_path(left, call_stack)?;
     if left_val.as_i64().is_none() {
         return Err(Error::msg(format!(
             "Left side of expression `{}` is not a integer number",
             path
-        )));        
+        )));
     }
 
     let right = right.trim_start_matches(if is_add { '+' } else { '-' }).trim();
@@ -128,27 +124,21 @@ fn process_expr_path<'a>(path: &str, call_stack: &CallStack<'a>) -> Result<Val<'
         return Err(Error::msg(format!(
             "Right side of expression `{}` is not a integer number",
             path
-        )));        
+        )));
     }
 
     if is_add {
         let left_val = left_val.as_i64().unwrap();
         let right_val = right_val.as_i64().unwrap();
-        Ok(Cow::Owned(Value::Number(
-            Number::from_i128((left_val + right_val) as i128).unwrap(),
-        )))
+        Ok(Cow::Owned(Value::Number(Number::from_i128((left_val + right_val) as i128).unwrap())))
     } else {
         let left_val = left_val.as_i64().unwrap();
         let right_val = right_val.as_i64().unwrap();
-        Ok(Cow::Owned(Value::Number(
-            Number::from_i128((left_val - right_val) as i128).unwrap(),
-        )))
+        Ok(Cow::Owned(Value::Number(Number::from_i128((left_val - right_val) as i128).unwrap())))
     }
-
 }
 
 fn process_path<'a>(path: &str, call_stack: &CallStack<'a>) -> Result<Val<'a>> {
-    
     if !path.contains('[') {
         match call_stack.lookup(path) {
             Some(v) => Ok(v),
@@ -498,11 +488,29 @@ impl<'a> Processor<'a> {
             }
             ExprVal::Test(ref test) => Cow::Owned(Value::Bool(self.eval_test(test)?)),
             ExprVal::Logic(_) => Cow::Owned(Value::Bool(self.eval_as_bool(expr)?)),
-            ExprVal::Math(_) => match self.eval_as_number(&expr.val) {
-                Ok(Some(n)) => Cow::Owned(Value::Number(n)),
-                Ok(None) => Cow::Owned(Value::String("NaN".to_owned())),
-                Err(e) => return Err(Error::msg(e)),
-            },
+            ExprVal::Math(ref math) => {
+                match self.eval_as_number(&expr.val) {
+                    Ok(Some(n)) => Cow::Owned(Value::Number(n)),
+                    Ok(None) => Cow::Owned(Value::String("NaN".to_owned())),
+                    Err(e) => {
+                        if math.operator == MathOperator::Add {
+                            // try string concat
+                            let left = self.eval_expression(&math.lhs).ok();
+                            let right = self.eval_expression(&math.rhs).ok();
+                            if left.is_some() && right.is_some() {
+                                Cow::Owned(Value::String(
+                                    left.unwrap().as_str().unwrap().to_string()
+                                        + right.unwrap().as_str().unwrap(),
+                                ))
+                            } else {
+                                return Err(Error::msg(e));
+                            }
+                        } else {
+                            return Err(Error::msg(e));
+                        }
+                    }
+                }
+            }
             ExprVal::Subscript(ref parts) => {
                 if parts.is_empty() {
                     return Err(Error::msg("Subscript parts cannot be empty"));
