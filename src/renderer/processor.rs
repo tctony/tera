@@ -420,9 +420,39 @@ impl<'a> Processor<'a> {
                 Cow::Owned(Value::String(val.to_string()))
             }
             ExprVal::StringConcat(ref str_concat) => {
-                let mut res = String::new();
-                for s in &str_concat.values {
-                    match *s {
+                if {
+                    let mut all_numbers = true;
+                    for s in &str_concat.values {
+                        if self.eval_as_number(s).ok().flatten().is_none() {
+                            all_numbers = false;
+                            break;
+                        }
+                        if match *s {
+                            ExprVal::String(_) => true,
+                            ExprVal::Ident(ref idt) => {
+                                if let Some(val) = self.lookup_ident(idt).ok() {
+                                    val.is_string()
+                                } else {
+                                    false
+                                }
+                            }
+                            _ => false,
+                        } {
+                            all_numbers = false;
+                            break;
+                        }
+                    }
+                    all_numbers
+                } {
+                    let mut res = 0.0;
+                    for s in &str_concat.values {
+                        res += self.eval_as_number(s).ok().flatten().unwrap().as_f64().unwrap();
+                    }
+                    Cow::Owned(Value::Number(Number::from_f64(res).unwrap()))
+                } else {
+                    let mut res = String::new();
+                    for s in &str_concat.values {
+                        match *s {
                         ExprVal::String(ref v) => res.push_str(v),
                         ExprVal::Int(ref v) => res.push_str(&format!("{}", v)),
                         ExprVal::Float(ref v) => res.push_str(&format!("{}", v)),
@@ -444,9 +474,10 @@ impl<'a> Processor<'a> {
                         },
                         _ => unreachable!(),
                     };
-                }
+                    }
 
-                Cow::Owned(Value::String(res))
+                    Cow::Owned(Value::String(res))
+                }
             }
             ExprVal::Int(val) => Cow::Owned(Value::Number(val.into())),
             ExprVal::Float(val) => Cow::Owned(Value::Number(Number::from_f64(val).unwrap())),

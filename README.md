@@ -4,6 +4,7 @@ this fork has made following changes:
 - handle escaped chars in string literal: `{{ 'hello\nworld'  }}`
 - support add and sub in square brackets: `{{ messages[loop.index0 + 1] }}`
 - support string concat with operator +: `{{ '1' + '2'  + '3' }}`
+  - with one side effect: `{{ 1 ~ 2 ~ 3 }}` renders to `6`
 - add builtin filter tojson: `{{ json_obj | tojson }}`
 
 [![Actions Status](https://github.com/Keats/tera/workflows/ci/badge.svg)](https://github.com/Keats/tera/actions)
