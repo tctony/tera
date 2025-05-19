@@ -164,6 +164,8 @@ pub enum ExprVal {
     Array(Vec<Expr>),
     StringConcat(StringConcat),
     In(In),
+    // support subscript val like this: val.foo.[loop.index0 + 1]
+    Subscript(Vec<Expr>),
 }
 
 /// An expression is a value that can be negated and followed by

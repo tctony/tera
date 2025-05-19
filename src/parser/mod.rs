@@ -188,6 +188,69 @@ fn parse_test(pair: Pair<Rule>) -> TeraResult<Test> {
     Ok(Test { ident: ident.unwrap(), negated: false, name: name.unwrap(), args })
 }
 
+fn parse_dotted_square_bracket_ident(pair: Pair<Rule>) -> TeraResult<ExprVal> {
+    let full_str = pair.as_str().to_string();
+
+    let inner_rules = pair.into_inner().collect::<Vec<_>>();
+    if inner_rules.is_empty() {
+        return Ok(ExprVal::Ident(full_str));
+    }   
+
+    let mut ident = "";
+    let mut parts = vec![];
+    // 目前这里进不去，因为语法匹配那里没有返回rule，而是一个整个字符串
+    for p in inner_rules {
+        eprintln!("parse_dotted_square_bracket_ident: {:?}", p.as_str());
+        match p.as_rule() {
+            Rule::dotted_ident => {
+                ident = p.as_str();
+                parts.push(Expr::new(ExprVal::Ident(ident.to_string())));
+            }
+            Rule::square_brackets => {
+                // Handle square bracket access like foo[loop.index0 + 1] or foo[loop.index0 - 1]
+                let mut left = None;
+                let mut is_add = true; // or sub
+                let mut right = None;
+                for p2 in p.into_inner() {
+                    match p2.as_rule() {
+                        Rule::inside_brackets_val => {
+                            let val = ExprVal::Ident(p2.as_str().to_string());
+                            if left.is_none() {
+                                left = Some(val);
+                            } else if right.is_none() {
+                                right = Some(val);
+                            }
+                        }
+                        Rule::op_plus => is_add = true,
+                        Rule::op_minus => is_add = false,
+                        _ => unreachable!("Got {:?} in square_brackets", p2.as_rule()),
+                    }
+                }
+                if left.is_some() && right.is_some() {
+                    parts.push(Expr::new(ExprVal::Math(MathExpr {
+                        lhs: Box::new(Expr::new(left.unwrap())),
+                        operator: if is_add { MathOperator::Add } else { MathOperator::Sub },
+                        rhs: Box::new(Expr::new(right.unwrap())),
+                    })));
+                } else if left.is_some() {
+                    parts.push(Expr::new(left.unwrap()));
+                } else {
+                    return Err(Error::msg("Invalid square brackets access".to_string()));
+                }
+            }
+            _ => unreachable!("Got {:?} in parse_dotted_square_bracket_ident", p.as_rule()),
+        }
+    }
+
+    // 底层返回的是一整个字符串
+    if parts.len() <= 1 {
+        return Ok(ExprVal::Ident(ident.to_string()));
+    }
+
+    // Otherwise, it's a subscript access
+    Ok(ExprVal::Subscript(parts))
+}
+
 fn parse_string_concat(pair: Pair<Rule>) -> TeraResult<ExprVal> {
     let mut values = vec![];
     let mut current_str = String::new();
@@ -223,7 +286,7 @@ fn parse_string_concat(pair: Pair<Rule>) -> TeraResult<ExprVal> {
                     values.push(ExprVal::String(current_str));
                     current_str = String::new();
                 }
-                values.push(ExprVal::Ident(p.as_str().to_string()))
+                values.push(parse_dotted_square_bracket_ident(p)?)
             }
             Rule::fn_call => {
                 if !current_str.is_empty() {
@@ -292,7 +355,7 @@ fn parse_basic_expression(pair: Pair<Rule>) -> TeraResult<ExprVal> {
         }
         Rule::fn_call => ExprVal::FunctionCall(parse_fn_call(pair)?),
         Rule::macro_call => ExprVal::MacroCall(parse_macro_call(pair)?),
-        Rule::dotted_square_bracket_ident => ExprVal::Ident(pair.as_str().to_string()),
+        Rule::dotted_square_bracket_ident => parse_dotted_square_bracket_ident(pair)?,
         Rule::basic_expr => {
             MATH_PARSER.map_primary(primary).map_infix(infix).parse(pair.into_inner())?
         }
@@ -356,7 +419,7 @@ fn parse_in_condition_container(pair: Pair<Rule>) -> TeraResult<Expr> {
         match p.as_rule() {
             Rule::array_filter => expr = Some(parse_array_with_filters(p)?),
             Rule::dotted_square_bracket_ident => {
-                expr = Some(Expr::new(ExprVal::Ident(p.as_str().to_string())))
+                expr = Some(Expr::new(parse_dotted_square_bracket_ident(p)?));
             }
             Rule::string_expr_filter => expr = Some(parse_string_expr_with_filters(p)?),
             _ => unreachable!("Got {:?} in parse_in_condition_container", p),
@@ -1136,7 +1199,9 @@ pub fn parse(input: &str) -> TeraResult<Vec<Node>> {
                     Rule::ident => "an identifier (must start with a-z)".to_string(),
                     Rule::dotted_ident => "a dotted identifier (identifiers separated by `.`)".to_string(),
                     Rule::dotted_square_bracket_ident => "a square bracketed identifier (identifiers separated by `.` or `[]`s)".to_string(),
-                    Rule::square_brackets => "an identifier, string or integer inside `[]`s".to_string(),
+                    Rule::square_brackets => "an identifier, string or integer or basic expare inside `[]`s".to_string(),
+                    Rule::inside_brackets_val => "a value inside `[]` that can do add or sub".to_string(),
+                    Rule::inside_brackets_op => "an add or substract `[]`".to_string(),
                     Rule::basic_expr_filter => "an expression with an optional filter".to_string(),
                     Rule::comparison_val => "a comparison value".to_string(),
                     Rule::basic_expr | Rule::comparison_expr => "an expression".to_string(),

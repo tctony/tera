@@ -100,6 +100,7 @@ fn lex_dotted_square_bracket_ident() {
         "hey[0]",
         "h['u'].x[0]",
         "hey[a[0]]",
+        "hey[a[0].b - 1]",
     ];
     for i in inputs {
         assert_lex_rule!(Rule::dotted_square_bracket_ident, i);

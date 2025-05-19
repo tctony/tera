@@ -28,7 +28,7 @@ fn evaluate_sub_variables(key: &str, call_stack: &CallStack) -> Result<String> {
 
     for sub_var in &sub_vars_to_calc {
         // Translate from variable name to variable value
-        match process_path(sub_var.as_ref(), call_stack) {
+        match process_expr_path(sub_var.as_ref(), call_stack) {
             Err(e) => {
                 return Err(Error::msg(format!(
                     "Variable {} can not be evaluated because: {}",
@@ -71,7 +71,84 @@ fn evaluate_sub_variables(key: &str, call_stack: &CallStack) -> Result<String> {
         .replace(']', ""))
 }
 
+fn process_expr_path<'a>(path: &str, call_stack: &CallStack<'a>) -> Result<Val<'a>> {
+    if !path.contains("+") && !path.contains("-") {
+        // first try as variable, then as literal number
+        match process_path(path, call_stack) {
+            Ok(v) => 
+                    return Ok(v),
+            Err(e) => {
+                // try to parse as number
+                let num = path.parse::<i64>();
+                if num.is_ok() {
+                    return Ok(Cow::Owned(Value::Number(
+                        Number::from_i128(num.unwrap() as i128).unwrap(),
+                    )));
+                }
+                return Err(Error::msg(format!(
+                    "Variable `{}` is not a number: {}",
+                    path, e
+                )));
+            }
+        }
+    }
+
+    // find next + or -
+    let (split_index, is_add) = {
+        let plus_pos = path.find('+');
+        let minus_pos = path.find('-');
+        match (plus_pos, minus_pos) {
+            (Some(p), Some(m)) => {
+                if p < m {
+                    (p, true)
+                } else {
+                    (m, false)
+                }
+            }
+            (Some(p), None) => (p, true),
+            (None, Some(m)) => (m, false),
+            _ => unreachable!("should not happen"),
+        }
+    };
+
+    let (left, right) = path.split_at(split_index);
+
+    let left = left.trim(); 
+    let left_val = process_expr_path(left, call_stack)?;
+    if left_val.as_i64().is_none() {
+        return Err(Error::msg(format!(
+            "Left side of expression `{}` is not a integer number",
+            path
+        )));        
+    }
+
+    let right = right.trim_start_matches(if is_add { '+' } else { '-' }).trim();
+    let right_val = process_expr_path(right, call_stack)?;
+    if right_val.as_i64().is_none() {
+        return Err(Error::msg(format!(
+            "Right side of expression `{}` is not a integer number",
+            path
+        )));        
+    }
+
+    if is_add {
+        let left_val = left_val.as_i64().unwrap();
+        let right_val = right_val.as_i64().unwrap();
+        Ok(Cow::Owned(Value::Number(
+            Number::from_i128((left_val + right_val) as i128).unwrap(),
+        )))
+    } else {
+        let left_val = left_val.as_i64().unwrap();
+        let right_val = right_val.as_i64().unwrap();
+        Ok(Cow::Owned(Value::Number(
+            Number::from_i128((left_val - right_val) as i128).unwrap(),
+        )))
+    }
+
+}
+
 fn process_path<'a>(path: &str, call_stack: &CallStack<'a>) -> Result<Val<'a>> {
+    
     if !path.contains('[') {
         match call_stack.lookup(path) {
             Some(v) => Ok(v),
@@ -426,6 +503,97 @@ impl<'a> Processor<'a> {
                 Ok(None) => Cow::Owned(Value::String("NaN".to_owned())),
                 Err(e) => return Err(Error::msg(e)),
             },
+            ExprVal::Subscript(ref parts) => {
+                if parts.is_empty() {
+                    return Err(Error::msg("Subscript parts cannot be empty"));
+                }
+
+                // First part should be an identifier
+                let mut current_value = match parts[0].val {
+                    ExprVal::Ident(ref ident) => self.lookup_ident(ident)?.clone().into_owned(),
+                    _ => return Err(Error::msg("First part of subscript must be an identifier")),
+                };
+
+                // If we only have one part, just return the base
+                if parts.len() == 1 {
+                    return Ok(Cow::Owned(current_value));
+                }
+
+                // Starting with the base value, access each part of the subscript
+                for i in 1..parts.len() {
+                    let accessor = &parts[i];
+                    let index_val = self.eval_expression(accessor)?.clone().into_owned();
+
+                    match current_value {
+                        Value::Array(arr) => {
+                            // For array access, we need a numeric index
+                            match index_val {
+                                Value::Number(n) => {
+                                    let idx = if n.is_u64() {
+                                        n.as_u64().unwrap() as usize
+                                    } else if n.is_i64() {
+                                        n.as_i64().unwrap() as usize
+                                    } else {
+                                        n.as_f64().unwrap().floor() as usize
+                                    };
+
+                                    if idx >= arr.len() {
+                                        return Err(Error::msg(format!(
+                                            "Index {} out of bounds for array of length {}",
+                                            idx,
+                                            arr.len()
+                                        )));
+                                    }
+
+                                    current_value = arr[idx].clone();
+                                }
+                                _ => {
+                                    return Err(Error::msg(
+                                        "Array subscript requires a numeric index",
+                                    ))
+                                }
+                            }
+                        }
+                        Value::Object(obj) => {
+                            // For object access, we need a string key
+                            let key = match index_val {
+                                Value::String(key) => key,
+                                Value::Number(n) => n.to_string(),
+                                _ => {
+                                    return Err(Error::msg(
+                                        "Object subscript requires a string or number key",
+                                    ))
+                                }
+                            };
+
+                            if let Some(val) = obj.get(&key) {
+                                current_value = val.clone();
+                            } else {
+                                return Err(Error::msg(format!(
+                                    "Key '{}' not found in object",
+                                    key
+                                )));
+                            }
+                        }
+                        other => {
+                            return Err(Error::msg(format!(
+                                "Cannot use subscript notation on value of type {}",
+                                if other.is_null() {
+                                    "null"
+                                } else if other.is_boolean() {
+                                    "boolean"
+                                } else if other.is_string() {
+                                    "string"
+                                } else {
+                                    "unknown"
+                                }
+                            )))
+                        }
+                    }
+                }
+
+                Cow::Owned(current_value)
+            }
         };
 
         for filter in &expr.filters {

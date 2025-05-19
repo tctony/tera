@@ -71,10 +71,17 @@ dotted_ident = @{
     ("." ~ all_chars+)*
 }
 
-square_brackets = @{
-    "[" ~ (int | string | dotted_square_bracket_ident) ~ "]"
+inside_brackets_val = @{
+    int | string | dotted_square_bracket_ident
 }
 
+inside_brackets_op = _{ op_plus | op_minus }
+
+square_brackets = @{
+    "[" ~ inside_brackets_val ~ (WHITESPACE ~ inside_brackets_op ~ WHITESPACE ~ inside_brackets_val )? ~ "]"
+}
+
+// 这里的@导致只会返回一个整个字符串
 dotted_square_bracket_ident = @{
     dotted_ident ~ ( ("." ~ all_chars+) | square_brackets )*
 }
